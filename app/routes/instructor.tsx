@@ -1,13 +1,14 @@
 import { Link } from "react-router";
 import type { Route } from "./+types/instructor";
 import { getCoursesByInstructor, getLessonCountForCourse } from "~/services/courseService";
-import { getEnrollmentCountForCourse } from "~/services/enrollmentService";
+import { getCourseAnalytics } from "~/services/analyticsService";
+import { StatTile, formatRevenue } from "~/components/analytics";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { AlertTriangle, BookOpen, GraduationCap, Plus, Users } from "lucide-react";
+import { AlertTriangle, BookOpen, DollarSign, GraduationCap, Plus, Users } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { data, isRouteErrorResponse } from "react-router";
 import { CourseStatus, UserRole } from "~/db/schema";
@@ -37,10 +38,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const instructorCourses = getCoursesByInstructor(currentUserId);
+  const analytics = getCourseAnalytics(currentUserId);
+  const statsByCourse = new Map(analytics.courses.map((c) => [c.id, c]));
 
   const coursesWithStats = instructorCourses.map((course) => {
     const lessonCount = getLessonCountForCourse(course.id);
-    const enrollmentCount = getEnrollmentCountForCourse(course.id);
+    const stats = statsByCourse.get(course.id);
 
     return {
       id: course.id,
@@ -50,13 +53,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: course.status,
       coverImageUrl: course.coverImageUrl,
       lessonCount,
-      enrollmentCount,
+      studentCount: stats?.studentCount ?? 0,
+      revenue: stats?.revenue ?? 0,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
     };
   });
 
-  return { courses: coursesWithStats };
+  return { courses: coursesWithStats, totals: analytics.totals };
 }
 
 function statusBadge(status: string) {
@@ -121,7 +125,7 @@ export function HydrateFallback() {
 export default function InstructorDashboard({
   loaderData,
 }: Route.ComponentProps) {
-  const { courses } = loaderData;
+  const { courses, totals } = loaderData;
 
   return (
     <div className="mx-auto max-w-7xl p-6 lg:p-8">
@@ -147,6 +151,11 @@ export default function InstructorDashboard({
             New Course
           </Button>
         </Link>
+      </div>
+
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile label="Students" value={String(totals.studentCount)} hint="Unique, all courses" />
+        <StatTile label="Revenue" value={formatRevenue(totals.revenue)} hint="Gross, all time" />
       </div>
 
       {courses.length === 0 ? (
@@ -200,9 +209,13 @@ export default function InstructorDashboard({
                   <div className="flex items-center gap-1.5">
                     <Users className="size-4" />
                     <span>
-                      {course.enrollmentCount}{" "}
-                      {course.enrollmentCount === 1 ? "student" : "students"}
+                      {course.studentCount}{" "}
+                      {course.studentCount === 1 ? "student" : "students"}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="size-4" />
+                    <span>{formatRevenue(course.revenue)} gross</span>
                   </div>
                 </div>
               </CardContent>
