@@ -165,4 +165,80 @@ describe("getCourseAnalytics", () => {
       expect(result.totals).toMatchObject({ studentCount: 0, revenue: 0 });
     });
   });
+
+  describe("platform scope (null)", () => {
+    it("returns every course with its instructor", () => {
+      const otherInstructor = createUser("Ada Lovelace", schema.UserRole.Instructor);
+      const otherCourse = createCourse("Other Course", {
+        instructorId: otherInstructor.id,
+      });
+
+      const result = getCourseAnalytics(null);
+
+      expect(courseRow(result, base.course.id).instructor).toEqual({
+        id: base.instructor.id,
+        name: "Test Instructor",
+      });
+      expect(courseRow(result, otherCourse.id).instructor).toEqual({
+        id: otherInstructor.id,
+        name: "Ada Lovelace",
+      });
+    });
+
+    it("de-duplicates students enrolled with multiple instructors in the headline", () => {
+      const otherInstructor = createUser("Ada Lovelace", schema.UserRole.Instructor);
+      const otherCourse = createCourse("Other Course", {
+        instructorId: otherInstructor.id,
+      });
+      enroll(base.user.id, base.course.id);
+      enroll(base.user.id, otherCourse.id);
+
+      const result = getCourseAnalytics(null);
+
+      expect(result.totals.studentCount).toBe(1);
+    });
+
+    it("returns per-instructor subtotals that exclude draft courses", () => {
+      const otherInstructor = createUser("Ada Lovelace", schema.UserRole.Instructor);
+      const otherCourse = createCourse("Other Course", {
+        instructorId: otherInstructor.id,
+      });
+      const draft = createCourse("Draft Course", {
+        status: schema.CourseStatus.Draft,
+      });
+      const second = createCourse("Second Course");
+      const other = createUser("Other Student");
+
+      enroll(base.user.id, base.course.id);
+      enroll(base.user.id, second.id); // same student, same instructor
+      enroll(other.id, second.id);
+      purchase(base.user.id, base.course.id, 1000);
+      purchase(other.id, second.id, 2000);
+      enroll(other.id, draft.id);
+      purchase(other.id, draft.id, 9999);
+      enroll(base.user.id, otherCourse.id);
+      purchase(base.user.id, otherCourse.id, 500);
+
+      const result = getCourseAnalytics(null);
+
+      const byId = new Map(result.instructors.map((i) => [i.id, i]));
+      expect(byId.get(base.instructor.id)).toMatchObject({
+        name: "Test Instructor",
+        studentCount: 2,
+        revenue: 3000,
+      });
+      expect(byId.get(otherInstructor.id)).toMatchObject({
+        name: "Ada Lovelace",
+        studentCount: 1,
+        revenue: 500,
+      });
+      expect(result.totals).toMatchObject({ studentCount: 2, revenue: 3500 });
+    });
+
+    it("leaves instructors empty for instructor scope", () => {
+      const result = getCourseAnalytics(base.instructor.id);
+
+      expect(result.instructors).toEqual([]);
+    });
+  });
 });

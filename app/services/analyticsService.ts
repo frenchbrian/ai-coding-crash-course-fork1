@@ -1,6 +1,12 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { CourseStatus, courses, enrollments, purchases } from "~/db/schema";
+import {
+  CourseStatus,
+  courses,
+  enrollments,
+  purchases,
+  users,
+} from "~/db/schema";
 
 // ─── Analytics Service ───
 // All-time course analytics for the instructor and admin dashboards.
@@ -14,9 +20,17 @@ export function getCourseAnalytics(instructorId: number | null) {
   const inScope =
     instructorId === null ? undefined : eq(courses.instructorId, instructorId);
 
+  const countedInScope = and(inScope, ne(courses.status, CourseStatus.Draft));
+
   const courseRows = db
-    .select({ id: courses.id, title: courses.title, status: courses.status })
+    .select({
+      id: courses.id,
+      title: courses.title,
+      status: courses.status,
+      instructor: { id: users.id, name: users.name },
+    })
     .from(courses)
+    .innerJoin(users, eq(courses.instructorId, users.id))
     .where(inScope)
     .all();
 
@@ -57,14 +71,53 @@ export function getCourseAnalytics(instructorId: number | null) {
     .select({ count: sql<number>`count(distinct ${enrollments.userId})` })
     .from(enrollments)
     .innerJoin(courses, eq(enrollments.courseId, courses.id))
-    .where(and(inScope, ne(courses.status, CourseStatus.Draft)))
+    .where(countedInScope)
     .get();
 
   return {
     totals: {
       studentCount: uniqueStudents?.count ?? 0,
-      revenue: counted.reduce((sum, c) => sum + c.revenue, 0),
+      revenue: sumRevenue(counted),
     },
     courses: courseStats,
+    instructors: instructorId === null ? instructorSubtotals(counted) : [],
   };
+}
+
+type CountedCourse = {
+  instructor: { id: number; name: string };
+  revenue: number;
+};
+
+function sumRevenue(rows: CountedCourse[]) {
+  return rows.reduce((sum, c) => sum + c.revenue, 0);
+}
+
+function instructorSubtotals(counted: CountedCourse[]) {
+  const uniqueStudentsByInstructor = new Map(
+    db
+      .select({
+        instructorId: courses.instructorId,
+        count: sql<number>`count(distinct ${enrollments.userId})`,
+      })
+      .from(enrollments)
+      .innerJoin(courses, eq(enrollments.courseId, courses.id))
+      .where(ne(courses.status, CourseStatus.Draft))
+      .groupBy(courses.instructorId)
+      .all()
+      .map((r) => [r.instructorId, r.count])
+  );
+
+  const byInstructor = new Map<number, CountedCourse[]>();
+  for (const course of counted) {
+    const rows = byInstructor.get(course.instructor.id) ?? [];
+    rows.push(course);
+    byInstructor.set(course.instructor.id, rows);
+  }
+
+  return [...byInstructor.values()].map((rows) => ({
+    ...rows[0].instructor,
+    studentCount: uniqueStudentsByInstructor.get(rows[0].instructor.id) ?? 0,
+    revenue: sumRevenue(rows),
+  }));
 }
