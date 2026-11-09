@@ -319,8 +319,9 @@ describe("getCourseAnalytics", () => {
       const [lesson] = addLessons(base.course.id, 1);
       const quiz = createQuiz(lesson.id, "Basics Quiz", 0.7);
       const other = createUser("Other");
-      attempt(base.user.id, quiz.id, 0.5);
+      // Best attempt first, so "latest attempt" would give the wrong answer.
       attempt(base.user.id, quiz.id, 0.8);
+      attempt(base.user.id, quiz.id, 0.5);
       attempt(other.id, quiz.id, 0.6);
 
       const row = courseRow(getCourseAnalytics(base.instructor.id), base.course.id);
