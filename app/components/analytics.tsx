@@ -45,6 +45,37 @@ export function formatPercent(fraction: number | null): string {
   return `${Math.round(fraction * 100)}%`;
 }
 
+type QuizRow = {
+  id: number;
+  title: string;
+  lessonTitle: string;
+  attemptedCount: number;
+  averageScore: number | null;
+  passRate: number | null;
+};
+
+/** Compact per-quiz list: average best score and pass rate. */
+export function QuizBreakdown({ quizzes }: { quizzes: QuizRow[] }) {
+  if (quizzes.length === 0) {
+    return <p className="text-xs text-muted-foreground">No quizzes</p>;
+  }
+  return (
+    <ul className="space-y-1 text-xs">
+      {quizzes.map((quiz) => (
+        <li key={quiz.id} className="flex items-baseline justify-between gap-3">
+          <span className="truncate" title={`${quiz.title} — ${quiz.lessonTitle}`}>
+            {quiz.title}
+          </span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {formatPercent(quiz.averageScore)} avg · {formatPercent(quiz.passRate)} pass
+            {" "}({quiz.attemptedCount})
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function StatTile({
   label,
   value,

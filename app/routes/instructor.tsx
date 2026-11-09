@@ -4,6 +4,7 @@ import { getCoursesByInstructor, getLessonCountForCourse } from "~/services/cour
 import { getCourseAnalytics } from "~/services/analyticsService";
 import {
   CourseStatusBadge,
+  QuizBreakdown,
   StatTile,
   formatPercent,
   formatRevenue,
@@ -62,6 +63,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       revenue: stats?.revenue ?? 0,
       completionRate: stats?.completionRate ?? null,
       averageProgress: stats?.averageProgress ?? null,
+      averageQuizScore: stats?.averageQuizScore ?? null,
+      quizzes: stats?.quizzes ?? [],
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
     };
@@ -139,6 +142,7 @@ export default function InstructorDashboard({
         <StatTile label="Students" value={String(totals.studentCount)} hint="Unique, all courses" />
         <StatTile label="Revenue" value={formatRevenue(totals.revenue)} hint="Gross, all time" />
         <StatTile label="Completion" value={formatPercent(totals.completionRate)} hint="Finished every lesson" />
+        <StatTile label="Avg. quiz score" value={formatPercent(totals.averageQuizScore)} hint="Best attempt per student" />
       </div>
 
       {courses.length === 0 ? (
@@ -210,7 +214,14 @@ export default function InstructorDashboard({
                   <dd className="text-right tabular-nums">
                     {formatPercent(course.averageProgress)}
                   </dd>
+                  <dt className="text-muted-foreground">Avg. quiz score</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatPercent(course.averageQuizScore)}
+                  </dd>
                 </dl>
+                <div className="mt-3 border-t pt-3">
+                  <QuizBreakdown quizzes={course.quizzes} />
+                </div>
               </CardContent>
               <CardFooter>
                 <Link to={`/instructor/${course.id}`} className="w-full">

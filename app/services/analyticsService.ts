@@ -60,9 +60,11 @@ export function getCourseAnalytics(instructorId: number | null) {
   );
 
   const completions = completionByCourse();
+  const quizzesByCourse = quizStatsByCourse();
 
   const courseStats = courseRows.map((course) => {
     const completion = completions.get(course.id);
+    const quizzes = quizzesByCourse.get(course.id) ?? [];
     return {
       ...course,
       studentCount: studentCounts.get(course.id) ?? 0,
@@ -71,6 +73,8 @@ export function getCourseAnalytics(instructorId: number | null) {
         ? completion.completed / completion.enrolled
         : null,
       averageProgress: completion?.averageProgress ?? null,
+      averageQuizScore: meanBestScore(quizzes),
+      quizzes,
       completion,
     };
   });
@@ -90,8 +94,12 @@ export function getCourseAnalytics(instructorId: number | null) {
       studentCount: uniqueStudents?.count ?? 0,
       revenue: sumRevenue(counted),
       completionRate: pooledCompletionRate(counted),
+      averageQuizScore: meanBestScore(counted.flatMap((c) => c.quizzes)),
     },
-    courses: courseStats.map(({ completion: _, ...course }) => course),
+    courses: courseStats.map(({ completion: _, quizzes, ...course }) => ({
+      ...course,
+      quizzes: quizzes.map(({ scoreSum: _, ...quiz }) => quiz),
+    })),
     instructors: instructorId === null ? instructorSubtotals(counted) : [],
   };
 }
@@ -106,7 +114,69 @@ type CountedCourse = {
   instructor: { id: number; name: string };
   revenue: number;
   completion: CourseCompletion | undefined;
+  quizzes: QuizStats[];
 };
+
+type QuizStats = {
+  id: number;
+  title: string;
+  lessonTitle: string;
+  attemptedCount: number;
+  averageScore: number | null;
+  passRate: number | null;
+  /** Sum of best scores — lets callers pool means across quizzes. */
+  scoreSum: number | null;
+};
+
+/** Mean of every student-quiz best score across the given quizzes. */
+function meanBestScore(quizzes: QuizStats[]) {
+  let count = 0;
+  let sum = 0;
+  for (const quiz of quizzes) {
+    count += quiz.attemptedCount;
+    sum += quiz.scoreSum ?? 0;
+  }
+  return count === 0 ? null : sum / count;
+}
+
+/**
+ * Per quiz, grouped by course, in curriculum order. A student's score is
+ * their best attempt; a pass is best score ≥ the quiz's own passing_score.
+ * The stored quiz_attempts.passed flag is not used — it is computed against
+ * a hardcoded threshold.
+ */
+function quizStatsByCourse() {
+  const rows = db.all<QuizStats & { courseId: number }>(sql`
+    with best as (
+      select quiz_id, user_id, max(score) as score
+      from quiz_attempts
+      group by quiz_id, user_id
+    )
+    select
+      q.id,
+      q.title,
+      l.title as lessonTitle,
+      m.course_id as courseId,
+      count(b.user_id) as attemptedCount,
+      avg(b.score) as averageScore,
+      avg(b.score >= q.passing_score) as passRate,
+      sum(b.score) as scoreSum
+    from quizzes q
+    join lessons l on l.id = q.lesson_id
+    join modules m on m.id = l.module_id
+    left join best b on b.quiz_id = q.id
+    group by q.id
+    order by m.position, l.position, q.id
+  `);
+
+  const byCourse = new Map<number, QuizStats[]>();
+  for (const { courseId, ...quiz } of rows) {
+    const list = byCourse.get(courseId) ?? [];
+    list.push(quiz);
+    byCourse.set(courseId, list);
+  }
+  return byCourse;
+}
 
 function sumRevenue(rows: CountedCourse[]) {
   return rows.reduce((sum, c) => sum + c.revenue, 0);

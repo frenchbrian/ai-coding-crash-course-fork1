@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import {
   CourseStatusBadge,
+  QuizBreakdown,
   StatTile,
   formatPercent,
   formatRevenue,
@@ -85,6 +86,7 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
         <StatTile label="Students" value={String(totals.studentCount)} hint="Unique, platform-wide" />
         <StatTile label="Revenue" value={formatRevenue(totals.revenue)} hint="Gross, all time" />
         <StatTile label="Completion" value={formatPercent(totals.completionRate)} hint="Finished every lesson" />
+        <StatTile label="Avg. quiz score" value={formatPercent(totals.averageQuizScore)} hint="Best attempt per student" />
       </div>
 
       <h2 className="mb-3 text-lg font-semibold">By instructor</h2>
@@ -137,12 +139,14 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                   <th className={thNum}>Revenue (gross)</th>
                   <th className={thNum}>Completion</th>
                   <th className={thNum}>Avg. progress</th>
+                  <th className={thNum}>Avg. quiz</th>
+                  <th className={`${th} min-w-64`}>Quizzes</th>
                 </tr>
               </thead>
               <tbody>
                 {courses.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className={`${td} text-center text-muted-foreground`}>
+                    <td colSpan={9} className={`${td} text-center text-muted-foreground`}>
                       No courses yet.
                     </td>
                   </tr>
@@ -158,6 +162,10 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                       <td className={tdNum}>{formatRevenue(course.revenue)}</td>
                       <td className={tdNum}>{formatPercent(course.completionRate)}</td>
                       <td className={tdNum}>{formatPercent(course.averageProgress)}</td>
+                      <td className={tdNum}>{formatPercent(course.averageQuizScore)}</td>
+                      <td className={td}>
+                        <QuizBreakdown quizzes={course.quizzes} />
+                      </td>
                     </tr>
                   ))
                 )}

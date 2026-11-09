@@ -81,6 +81,23 @@ function progress(
   testDb.insert(schema.lessonProgress).values({ userId, lessonId, status }).run();
 }
 
+function createQuiz(lessonId: number, title: string, passingScore: number) {
+  return testDb
+    .insert(schema.quizzes)
+    .values({ lessonId, title, passingScore })
+    .returning()
+    .get();
+}
+
+function attempt(
+  userId: number,
+  quizId: number,
+  score: number,
+  passed = score > 0.7
+) {
+  testDb.insert(schema.quizAttempts).values({ userId, quizId, score, passed }).run();
+}
+
 function courseRow(
   result: ReturnType<typeof getCourseAnalytics>,
   courseId: number
@@ -294,6 +311,86 @@ describe("getCourseAnalytics", () => {
       enroll(createUser("Draft Student").id, draft.id);
 
       expect(getCourseAnalytics(base.instructor.id).totals.completionRate).toBe(1);
+    });
+  });
+
+  describe("quiz scores", () => {
+    it("uses each student's best attempt for score and pass", () => {
+      const [lesson] = addLessons(base.course.id, 1);
+      const quiz = createQuiz(lesson.id, "Basics Quiz", 0.7);
+      const other = createUser("Other");
+      attempt(base.user.id, quiz.id, 0.5);
+      attempt(base.user.id, quiz.id, 0.8);
+      attempt(other.id, quiz.id, 0.6);
+
+      const row = courseRow(getCourseAnalytics(base.instructor.id), base.course.id);
+
+      expect(row.quizzes).toHaveLength(1);
+      expect(row.quizzes[0]).toMatchObject({
+        id: quiz.id,
+        title: "Basics Quiz",
+        lessonTitle: "Lesson 1",
+        attemptedCount: 2,
+        passRate: 0.5,
+      });
+      expect(row.quizzes[0].averageScore).toBeCloseTo(0.7);
+      expect(row.averageQuizScore).toBeCloseTo(0.7);
+    });
+
+    it("passes against the quiz's configured pass mark, not the stored flag", () => {
+      const [lesson] = addLessons(base.course.id, 1);
+      const quiz = createQuiz(lesson.id, "Lenient Quiz", 0.6);
+      attempt(base.user.id, quiz.id, 0.65, false);
+
+      const row = courseRow(getCourseAnalytics(base.instructor.id), base.course.id);
+
+      expect(row.quizzes[0].passRate).toBe(1);
+    });
+
+    it("returns null for courses with no quizzes and quizzes with no attempts", () => {
+      const withQuiz = createCourse("With Quiz");
+      const [lesson] = addLessons(withQuiz.id, 1);
+      const quiz = createQuiz(lesson.id, "Untaken", 0.7);
+
+      const result = getCourseAnalytics(base.instructor.id);
+
+      expect(courseRow(result, base.course.id)).toMatchObject({
+        averageQuizScore: null,
+        quizzes: [],
+      });
+      expect(courseRow(result, withQuiz.id)).toMatchObject({
+        averageQuizScore: null,
+        quizzes: [
+          {
+            id: quiz.id,
+            averageScore: null,
+            passRate: null,
+            attemptedCount: 0,
+          },
+        ],
+      });
+      expect(result.totals.averageQuizScore).toBeNull();
+    });
+
+    it("headline averages every student-quiz best score, excluding drafts", () => {
+      // Course A: one score of 1.0. Course B: three scores of 0.4.
+      // Mean of all best scores = 2.2/4 = 0.55, not the mean of course averages (0.7).
+      const [a] = addLessons(base.course.id, 1);
+      const quizA = createQuiz(a.id, "A", 0.7);
+      attempt(base.user.id, quizA.id, 1);
+      const courseB = createCourse("Course B");
+      const [b] = addLessons(courseB.id, 1);
+      const quizB = createQuiz(b.id, "B", 0.7);
+      for (const name of ["B1", "B2", "B3"]) {
+        attempt(createUser(name).id, quizB.id, 0.4);
+      }
+      const draft = createCourse("Draft", { status: schema.CourseStatus.Draft });
+      const [d] = addLessons(draft.id, 1);
+      attempt(base.user.id, createQuiz(d.id, "D", 0.7).id, 0);
+
+      const result = getCourseAnalytics(base.instructor.id);
+
+      expect(result.totals.averageQuizScore).toBeCloseTo(0.55);
     });
   });
 
