@@ -10,6 +10,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import {
   CourseStatusBadge,
   StatTile,
+  formatPercent,
   formatRevenue,
 } from "~/components/analytics";
 import { AlertTriangle } from "lucide-react";
@@ -83,6 +84,7 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Students" value={String(totals.studentCount)} hint="Unique, platform-wide" />
         <StatTile label="Revenue" value={formatRevenue(totals.revenue)} hint="Gross, all time" />
+        <StatTile label="Completion" value={formatPercent(totals.completionRate)} hint="Finished every lesson" />
       </div>
 
       <h2 className="mb-3 text-lg font-semibold">By instructor</h2>
@@ -95,12 +97,13 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                   <th className={th}>Instructor</th>
                   <th className={thNum}>Students</th>
                   <th className={thNum}>Revenue (gross)</th>
+                  <th className={thNum}>Completion</th>
                 </tr>
               </thead>
               <tbody>
                 {instructors.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className={`${td} text-center text-muted-foreground`}>
+                    <td colSpan={4} className={`${td} text-center text-muted-foreground`}>
                       No published or archived courses yet.
                     </td>
                   </tr>
@@ -110,6 +113,7 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                       <td className={`${td} font-medium`}>{instructor.name}</td>
                       <td className={tdNum}>{instructor.studentCount}</td>
                       <td className={tdNum}>{formatRevenue(instructor.revenue)}</td>
+                      <td className={tdNum}>{formatPercent(instructor.completionRate)}</td>
                     </tr>
                   ))
                 )}
@@ -131,12 +135,14 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                   <th className={th}>Status</th>
                   <th className={thNum}>Students</th>
                   <th className={thNum}>Revenue (gross)</th>
+                  <th className={thNum}>Completion</th>
+                  <th className={thNum}>Avg. progress</th>
                 </tr>
               </thead>
               <tbody>
                 {courses.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className={`${td} text-center text-muted-foreground`}>
+                    <td colSpan={7} className={`${td} text-center text-muted-foreground`}>
                       No courses yet.
                     </td>
                   </tr>
@@ -150,6 +156,8 @@ export default function AdminAnalytics({ loaderData }: Route.ComponentProps) {
                       </td>
                       <td className={tdNum}>{course.studentCount}</td>
                       <td className={tdNum}>{formatRevenue(course.revenue)}</td>
+                      <td className={tdNum}>{formatPercent(course.completionRate)}</td>
+                      <td className={tdNum}>{formatPercent(course.averageProgress)}</td>
                     </tr>
                   ))
                 )}

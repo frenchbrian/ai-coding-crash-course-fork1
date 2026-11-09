@@ -5,6 +5,7 @@ import { getCourseAnalytics } from "~/services/analyticsService";
 import {
   CourseStatusBadge,
   StatTile,
+  formatPercent,
   formatRevenue,
 } from "~/components/analytics";
 import { getCurrentUserId } from "~/lib/session";
@@ -59,6 +60,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       lessonCount,
       studentCount: stats?.studentCount ?? 0,
       revenue: stats?.revenue ?? 0,
+      completionRate: stats?.completionRate ?? null,
+      averageProgress: stats?.averageProgress ?? null,
       createdAt: course.createdAt,
       updatedAt: course.updatedAt,
     };
@@ -135,6 +138,7 @@ export default function InstructorDashboard({
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Students" value={String(totals.studentCount)} hint="Unique, all courses" />
         <StatTile label="Revenue" value={formatRevenue(totals.revenue)} hint="Gross, all time" />
+        <StatTile label="Completion" value={formatPercent(totals.completionRate)} hint="Finished every lesson" />
       </div>
 
       {courses.length === 0 ? (
@@ -197,6 +201,16 @@ export default function InstructorDashboard({
                     <span>{formatRevenue(course.revenue)} gross</span>
                   </div>
                 </div>
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                  <dt className="text-muted-foreground">Completion</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatPercent(course.completionRate)}
+                  </dd>
+                  <dt className="text-muted-foreground">Avg. progress</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatPercent(course.averageProgress)}
+                  </dd>
+                </dl>
               </CardContent>
               <CardFooter>
                 <Link to={`/instructor/${course.id}`} className="w-full">

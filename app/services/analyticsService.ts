@@ -4,6 +4,7 @@ import {
   CourseStatus,
   courses,
   enrollments,
+  LessonProgressStatus,
   purchases,
   users,
 } from "~/db/schema";
@@ -58,11 +59,21 @@ export function getCourseAnalytics(instructorId: number | null) {
       .map((r) => [r.courseId, r.total])
   );
 
-  const courseStats = courseRows.map((course) => ({
-    ...course,
-    studentCount: studentCounts.get(course.id) ?? 0,
-    revenue: revenues.get(course.id) ?? 0,
-  }));
+  const completions = completionByCourse();
+
+  const courseStats = courseRows.map((course) => {
+    const completion = completions.get(course.id);
+    return {
+      ...course,
+      studentCount: studentCounts.get(course.id) ?? 0,
+      revenue: revenues.get(course.id) ?? 0,
+      completionRate: completion
+        ? completion.completed / completion.enrolled
+        : null,
+      averageProgress: completion?.averageProgress ?? null,
+      completion,
+    };
+  });
 
   const counted = courseStats.filter((c) => c.status !== CourseStatus.Draft);
 
@@ -78,19 +89,87 @@ export function getCourseAnalytics(instructorId: number | null) {
     totals: {
       studentCount: uniqueStudents?.count ?? 0,
       revenue: sumRevenue(counted),
+      completionRate: pooledCompletionRate(counted),
     },
-    courses: courseStats,
+    courses: courseStats.map(({ completion: _, ...course }) => course),
     instructors: instructorId === null ? instructorSubtotals(counted) : [],
   };
 }
 
+type CourseCompletion = {
+  enrolled: number;
+  completed: number;
+  averageProgress: number;
+};
+
 type CountedCourse = {
   instructor: { id: number; name: string };
   revenue: number;
+  completion: CourseCompletion | undefined;
 };
 
 function sumRevenue(rows: CountedCourse[]) {
   return rows.reduce((sum, c) => sum + c.revenue, 0);
+}
+
+/** Total completed enrollments ÷ total enrollments, across courses with lessons. */
+function pooledCompletionRate(rows: CountedCourse[]) {
+  let enrolled = 0;
+  let completed = 0;
+  for (const { completion } of rows) {
+    if (!completion) continue;
+    enrolled += completion.enrolled;
+    completed += completion.completed;
+  }
+  return enrolled === 0 ? null : completed / enrolled;
+}
+
+/**
+ * Per course: distinct enrolled students, how many completed every lesson,
+ * and their mean fraction of lessons completed. A lesson counts once per
+ * student if any of their progress rows for it is completed (there is no
+ * unique index on lesson_progress). enrollments.completed_at is ignored —
+ * nothing in the app sets it.
+ *
+ * Courses with no lessons or no enrollments have no row.
+ */
+function completionByCourse() {
+  const rows = db.all<{
+    courseId: number;
+    enrolled: number;
+    completed: number;
+    averageProgress: number;
+  }>(sql`
+    with lesson_totals as (
+      select m.course_id, count(*) as total
+      from lessons l
+      join modules m on m.id = l.module_id
+      group by m.course_id
+    ),
+    student_progress as (
+      select e.course_id, e.user_id, count(distinct lp.lesson_id) as done
+      from (select distinct course_id, user_id from enrollments) e
+      join modules m on m.course_id = e.course_id
+      join lessons l on l.module_id = m.id
+      left join lesson_progress lp
+        on lp.lesson_id = l.id
+        and lp.user_id = e.user_id
+        and lp.status = ${LessonProgressStatus.Completed}
+      group by e.course_id, e.user_id
+    )
+    select
+      sp.course_id as courseId,
+      count(*) as enrolled,
+      sum(sp.done = lt.total) as completed,
+      avg(sp.done * 1.0 / lt.total) as averageProgress
+    from student_progress sp
+    join lesson_totals lt on lt.course_id = sp.course_id
+    group by sp.course_id
+  `);
+
+  return new Map<number, CourseCompletion>(
+    rows.map(({ courseId, ...completion }) => [courseId, completion])
+  );
 }
 
 function instructorSubtotals(counted: CountedCourse[]) {
@@ -119,5 +198,6 @@ function instructorSubtotals(counted: CountedCourse[]) {
     ...rows[0].instructor,
     studentCount: uniqueStudentsByInstructor.get(rows[0].instructor.id) ?? 0,
     revenue: sumRevenue(rows),
+    completionRate: pooledCompletionRate(rows),
   }));
 }
