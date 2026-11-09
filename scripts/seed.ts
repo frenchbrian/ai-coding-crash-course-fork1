@@ -1661,7 +1661,7 @@ You've completed the Building REST APIs course. You now have the skills to build
   // Helper to record a quiz attempt with answers
   function recordQuizAttempt(
     userId: number,
-    quizId: number,
+    quiz: { id: number; passingScore: number },
     optionIds: { questionId: number; optionId: number; correct: boolean }[],
     selectedCorrectIndices: number[], // which questions (0-based) the student got right
     attemptDaysAgo: number
@@ -1670,14 +1670,13 @@ You've completed the Building REST APIs course. You now have the skills to build
     const correctCount = selectedCorrectIndices.length;
     const score = correctCount / totalQuestions;
 
-    // Determine passing based on quiz passingScore (we'll just use 0.7 as default)
-    const passed = score >= 0.7;
+    const passed = score >= quiz.passingScore;
 
     const [attempt] = db
       .insert(schema.quizAttempts)
       .values({
         userId,
-        quizId,
+        quizId: quiz.id,
         score,
         passed,
         attemptedAt: daysAgo(attemptDaysAgo),
@@ -1711,31 +1710,31 @@ You've completed the Building REST APIs course. You now have the skills to build
   }
 
   // Emma — passed quiz 1 (3/3 correct)
-  recordQuizAttempt(students[0].id, quiz1.id, quiz1OptionIds, [0, 1, 2], 35);
+  recordQuizAttempt(students[0].id, quiz1, quiz1OptionIds, [0, 1, 2], 35);
 
   // Emma — passed quiz 2 (2/2 correct)
-  recordQuizAttempt(students[0].id, quiz2.id, quiz2OptionIds, [0, 1], 30);
+  recordQuizAttempt(students[0].id, quiz2, quiz2OptionIds, [0, 1], 30);
 
   // Emma — passed quiz 3 (2/3 correct, just barely at 67% with 70% passing = fail, then retake)
-  recordQuizAttempt(students[0].id, quiz3.id, quiz3OptionIds, [0, 2], 28);
+  recordQuizAttempt(students[0].id, quiz3, quiz3OptionIds, [0, 2], 28);
   // Retake — all correct
-  recordQuizAttempt(students[0].id, quiz3.id, quiz3OptionIds, [0, 1, 2], 27);
+  recordQuizAttempt(students[0].id, quiz3, quiz3OptionIds, [0, 1, 2], 27);
 
   // James — passed quiz 1 (3/3 correct)
-  recordQuizAttempt(students[1].id, quiz1.id, quiz1OptionIds, [0, 1, 2], 40);
+  recordQuizAttempt(students[1].id, quiz1, quiz1OptionIds, [0, 1, 2], 40);
 
   // James — passed quiz 2 (2/2 correct)
-  recordQuizAttempt(students[1].id, quiz2.id, quiz2OptionIds, [0, 1], 35);
+  recordQuizAttempt(students[1].id, quiz2, quiz2OptionIds, [0, 1], 35);
 
   // Olivia — failed quiz 1 first attempt (1/3 correct), then passed on retry (3/3)
-  recordQuizAttempt(students[2].id, quiz1.id, quiz1OptionIds, [0], 25);
-  recordQuizAttempt(students[2].id, quiz1.id, quiz1OptionIds, [0, 1, 2], 24);
+  recordQuizAttempt(students[2].id, quiz1, quiz1OptionIds, [0], 25);
+  recordQuizAttempt(students[2].id, quiz1, quiz1OptionIds, [0, 1, 2], 24);
 
   // Olivia — passed quiz 3 (3/3 correct)
-  recordQuizAttempt(students[2].id, quiz3.id, quiz3OptionIds, [0, 1, 2], 20);
+  recordQuizAttempt(students[2].id, quiz3, quiz3OptionIds, [0, 1, 2], 20);
 
   // Sophia — failed quiz 1 (1/3 correct, hasn't retaken yet)
-  recordQuizAttempt(students[4].id, quiz1.id, quiz1OptionIds, [1], 10);
+  recordQuizAttempt(students[4].id, quiz1, quiz1OptionIds, [1], 10);
 
   console.log("Created quiz attempts and answers.");
 

@@ -8,6 +8,11 @@ import {
   quizAnswers,
 } from "~/db/schema";
 
+/** A quiz is passed when the score meets or beats that quiz's own pass mark. */
+function isPassingScore(score: number, passingScore: number) {
+  return score >= passingScore;
+}
+
 function scoreMultipleChoiceQuestions(quizData: any, answers: any): any {
   let correctCount = 0;
   let totalMC = 0;
@@ -115,10 +120,7 @@ export function getScore(quizId: any, answers: any): any {
     const totalQuestions = mcResult.total + tfResult.total;
     const overallScore = totalQuestions > 0 ? totalCorrect / totalQuestions : 0;
 
-    let passed = false;
-    if (overallScore > 0.7) {
-      passed = true;
-    }
+    const passed = isPassingScore(overallScore, quiz.passingScore);
 
     let grade = "F";
     if (overallScore >= 0.9) {
@@ -231,7 +233,7 @@ export function computeResult(
     }
 
     const scoreValue = total > 0 ? correct / total : 0;
-    const passed = scoreValue > 0.7;
+    const passed = isPassingScore(scoreValue, quiz.passingScore);
     const grade = calculateGrade(scoreValue);
 
     const attempt = db
