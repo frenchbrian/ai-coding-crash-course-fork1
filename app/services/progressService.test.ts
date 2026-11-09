@@ -24,6 +24,7 @@ import {
   isLessonCompleted,
   getNextIncompleteLesson,
 } from "./progressService";
+import { findEnrollment } from "./enrollmentService";
 
 // Helper to create a module with lessons in the test db
 function createModuleWithLessons(
@@ -98,6 +99,107 @@ describe("progressService", () => {
       const progress = markLessonComplete(base.user.id, lessons[0].id);
 
       expect(progress.status).toBe(schema.LessonProgressStatus.Completed);
+    });
+
+    describe("course completion", () => {
+      function enroll(courseId = base.course.id) {
+        testDb
+          .insert(schema.enrollments)
+          .values({ userId: base.user.id, courseId })
+          .run();
+      }
+
+      function completedAt(courseId = base.course.id) {
+        return findEnrollment(base.user.id, courseId)?.completedAt ?? null;
+      }
+
+      it("marks the enrollment complete when the last lesson is completed", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 2);
+        enroll();
+
+        markLessonComplete(base.user.id, lessons[0].id);
+        markLessonComplete(base.user.id, lessons[1].id);
+
+        expect(completedAt()).not.toBeNull();
+      });
+
+      it("leaves the enrollment incomplete while lessons remain", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 2);
+        enroll();
+
+        markLessonComplete(base.user.id, lessons[0].id);
+
+        expect(completedAt()).toBeNull();
+      });
+
+      it("does not count duplicate progress rows for one lesson twice", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 2);
+        enroll();
+        // Two completed rows for lesson 1 (no unique index); lesson 2 is undone.
+        for (let i = 0; i < 2; i++) {
+          testDb
+            .insert(schema.lessonProgress)
+            .values({
+              userId: base.user.id,
+              lessonId: lessons[0].id,
+              status: schema.LessonProgressStatus.Completed,
+            })
+            .run();
+        }
+
+        markLessonComplete(base.user.id, lessons[0].id);
+
+        expect(completedAt()).toBeNull();
+      });
+
+      it("keeps the original completion time when a lesson is completed again", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 1);
+        enroll();
+        markLessonComplete(base.user.id, lessons[0].id);
+        const first = completedAt();
+        testDb
+          .update(schema.enrollments)
+          .set({ completedAt: "2026-01-01T00:00:00.000Z" })
+          .run(); // pin a known time so a rewrite would be visible
+
+        markLessonComplete(base.user.id, lessons[0].id);
+
+        expect(first).not.toBeNull();
+        expect(completedAt()).toBe("2026-01-01T00:00:00.000Z");
+      });
+
+      it("only affects the course the lesson belongs to", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 1);
+        const other = testDb
+          .insert(schema.courses)
+          .values({
+            title: "Other",
+            slug: "other",
+            description: "Other",
+            salesCopy: "Other",
+            instructorId: base.instructor.id,
+            categoryId: base.category.id,
+            status: schema.CourseStatus.Published,
+          })
+          .returning()
+          .get();
+        createModuleWithLessons(other.id, "Other Module", 1, 1);
+        enroll();
+        enroll(other.id);
+
+        markLessonComplete(base.user.id, lessons[0].id);
+
+        expect(completedAt()).not.toBeNull();
+        expect(completedAt(other.id)).toBeNull();
+      });
+
+      it("does nothing for a student who is not enrolled", () => {
+        const { lessons } = createModuleWithLessons(base.course.id, "Module 1", 1, 1);
+
+        markLessonComplete(base.user.id, lessons[0].id);
+
+        expect(findEnrollment(base.user.id, base.course.id)).toBeUndefined();
+      });
     });
   });
 

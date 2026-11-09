@@ -1,4 +1,4 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { db } from "~/db";
 import {
   enrollments,
@@ -110,12 +110,17 @@ export function unenrollUser(userId: number, courseId: number) {
     .get();
 }
 
+/** Sets completedAt on the enrollment. Keeps the original time if already set. */
 export function markEnrollmentComplete(userId: number, courseId: number) {
   return db
     .update(enrollments)
     .set({ completedAt: new Date().toISOString() })
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isNull(enrollments.completedAt)
+      )
     )
     .returning()
     .get();

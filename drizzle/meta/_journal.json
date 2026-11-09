@@ -64,6 +64,13 @@
       "when": 1794252724746,
       "tag": "0008_backfill_quiz_attempt_passed",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794252896667,
+      "tag": "0009_backfill_enrollment_completed_at",
+      "breakpoints": true
     }
   ]
 }

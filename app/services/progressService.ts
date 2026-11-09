@@ -1,5 +1,6 @@
-import { eq, and, or, sql, desc } from "drizzle-orm";
+import { eq, and, or, sql, desc, inArray } from "drizzle-orm";
 import { db } from "~/db";
+import { markEnrollmentComplete } from "~/services/enrollmentService";
 import {
   lessonProgress,
   lessons,
@@ -55,31 +56,66 @@ export function getLessonProgressForCourse(userId: number, courseId: number) {
     .all();
 }
 
+/**
+ * Marks a lesson completed. If that finishes every lesson in the course, the
+ * student's enrollment is marked complete too.
+ */
 export function markLessonComplete(userId: number, lessonId: number) {
   const existing = getLessonProgress(userId, lessonId);
 
-  if (existing) {
-    return db
-      .update(lessonProgress)
-      .set({
-        status: LessonProgressStatus.Completed,
-        completedAt: new Date().toISOString(),
-      })
-      .where(eq(lessonProgress.id, existing.id))
-      .returning()
-      .get();
-  }
+  const progress = existing
+    ? db
+        .update(lessonProgress)
+        .set({
+          status: LessonProgressStatus.Completed,
+          completedAt: new Date().toISOString(),
+        })
+        .where(eq(lessonProgress.id, existing.id))
+        .returning()
+        .get()
+    : db
+        .insert(lessonProgress)
+        .values({
+          userId,
+          lessonId,
+          status: LessonProgressStatus.Completed,
+          completedAt: new Date().toISOString(),
+        })
+        .returning()
+        .get();
 
-  return db
-    .insert(lessonProgress)
-    .values({
-      userId,
-      lessonId,
-      status: LessonProgressStatus.Completed,
-      completedAt: new Date().toISOString(),
-    })
-    .returning()
+  completeEnrollmentIfFinished(userId, lessonId);
+
+  return progress;
+}
+
+function completeEnrollmentIfFinished(userId: number, lessonId: number) {
+  const lesson = db
+    .select({ courseId: modules.courseId })
+    .from(lessons)
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .where(eq(lessons.id, lessonId))
     .get();
+  if (!lesson) return;
+
+  const lessonIds = getCourseLessonIds(lesson.courseId);
+
+  // Distinct lessons — there is no unique index on lesson_progress.
+  const done = db
+    .select({ count: sql<number>`count(distinct ${lessonProgress.lessonId})` })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, LessonProgressStatus.Completed),
+        inArray(lessonProgress.lessonId, lessonIds)
+      )
+    )
+    .get();
+
+  if ((done?.count ?? 0) === lessonIds.length) {
+    markEnrollmentComplete(userId, lesson.courseId);
+  }
 }
 
 export function markLessonInProgress(userId: number, lessonId: number) {
